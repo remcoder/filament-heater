@@ -6,6 +6,10 @@
 #include <U8x8lib.h>
 
 const int THERMAL_RUNAWAY_TIMOUT = 60; //seconds
+const int MIN_BED_TEMP = 12;
+const int MAX_BED_TEMP = 100;
+const int MIN_AIR_TEMP = 12;
+const int MAX_AIR_TEMP = 80;
 
 /*
 LCD12864 (ST7920 128X64)
@@ -38,8 +42,8 @@ int pinBedThermistor = A6; // GPIO 14
 
 bool isHeaterRelayOn = false;
 int bedTemp = -1;
-int currentTemp = -1;
-int currentHumidity = -1;
+int airTemp = -1;
+int humidity = -1;
 int targetTemp = 40;
 int targetOffset = 5; // seems to result in ±5 degree overshoot
 int bedTempMaxDiff = 15;
@@ -89,11 +93,11 @@ void turnOnHeater(bool state) {
 }
 
 void updateHeater() {
-  isHeaterRelayOn = (currentTemp < (targetTemp - targetOffset)) && bedTemp < (targetTemp + bedTempMaxDiff);
+  isHeaterRelayOn = (airTemp < (targetTemp - targetOffset)) && bedTemp < (targetTemp + bedTempMaxDiff);
   turnOnHeater(isHeaterRelayOn);
 }
 
-void measureTemp() {
+void getAirTemp() {
   // read without samples.
   byte temperature = 0;
   byte humidity = 0;
@@ -104,16 +108,17 @@ void measureTemp() {
     return;
   }
   
-  Serial.print("Sample OK: ");
-  currentTemp = (int)temperature;
-  currentHumidity = (int)humidity;
-  Serial.print(currentTemp); Serial.print(" *C, ");
-  Serial.print(currentHumidity); Serial.println(" RH%");
+  // Serial.print("Sample OK: ");
+  airTemp = (int)temperature;
+  humidity = (int)humidity;
+  // Serial.print(airTemp); Serial.print(" *C, ");
+  // Serial.print(humidity); Serial.println(" RH%");
+
+  delay(500);
 }
 
 void getBedTemp()
 {
-
     // Converts input from a thermistor voltage divider to a temperature value.
     // The voltage divider consists of thermistor Rt and series resistor R0.
     // The value of R0 is equal to the thermistor resistance at T0.
@@ -164,16 +169,57 @@ void checkForThermalRunaway() {
 }
 
 void haltOnError(String error) {
-  Serial.println("ERROR" + error);
+  turnOnHeater(false);
+
+  Serial.println("ERROR: " + error);
   
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_t0_11_mf); // w=6, h=11, 
   gotoLine(0);
-  u8g2.print("ERROR" + error);
+  u8g2.print("ERROR: " + error);
   u8g2.sendBuffer();
 
   while (true) {
     delay(1000);
+  }
+}
+
+void startUpTest() {
+
+  Serial.print("Getting bed temp");
+
+  do {
+    Serial.print(".");
+    getBedTemp();
+  } while(bedTemp == -1);
+  Serial.println(bedTemp);
+
+  Serial.print("Getting air temp");
+  do {
+    Serial.print(".");
+    getAirTemp();
+  } while(airTemp == -1);
+  Serial.println(airTemp);
+
+  checkMinMaxTemps();
+}
+
+void checkMinMaxTemps() {
+
+  if (bedTemp < MIN_BED_TEMP) {
+    haltOnError("MIN_BED_TEMP");
+  }
+
+  if (bedTemp > MAX_BED_TEMP) {
+    haltOnError("MAX_BED_TEMP");
+  }
+
+  if (airTemp < MIN_AIR_TEMP) {
+    haltOnError("MIN_AIR_TEMP");
+  }
+
+  if (airTemp > MAX_AIR_TEMP) {
+    haltOnError("MAX_AIR_TEMP");
   }
 }
 
@@ -182,32 +228,34 @@ void setup()
   adc.attach(pinBedThermistor);
 
   pinMode(pinHeaterRelay, OUTPUT);
+  turnOnHeater(false);
+
+  Serial.begin(115200);
 
   u8g2.begin();
   u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_ncenB14_tr);
-  u8g2.drawStr(0,20,"Hello World!");
+  u8g2.setFont(u8g2_font_ncenB10_tn);
+  u8g2.drawStr(0,20,"Filament Heater");
   u8g2.sendBuffer();
-	Serial.begin(115200);
+	
+  startUpTest();
 }
 
 void loop() {
-  // start working...
-  Serial.println("=================================");
-  Serial.println("Sample DHT22...");
-  
-  measureTemp();
-
-  Serial.println("=================================");
-  Serial.println("Updating screen...");
-  
   getBedTemp();
+  Serial.print("Bed: "); Serial.print(bedTemp); Serial.print(" *C, ");
+
+  getAirTemp();
+  Serial.print("Air: "); Serial.print(airTemp); Serial.print(" *C, ");
+  Serial.print("Hum: "); Serial.print(humidity); Serial.println(" RH%");
+
 
   checkForThermalRunaway();
+  checkMinMaxTemps();
 
   updateHeater();
 
-  updateScreen(currentTemp, currentHumidity);
+  updateScreen(airTemp, humidity);
   
   // DHT22 sampling rate is 0.5HZ.
   delay(500);
