@@ -5,6 +5,7 @@
 #include <U8g2lib.h>
 #include <U8x8lib.h>
 
+const int THERMAL_RUNAWAY_TIMOUT = 60; //seconds
 
 /*
 LCD12864 (ST7920 128X64)
@@ -42,7 +43,6 @@ int currentHumidity = -1;
 int targetTemp = 40;
 int targetOffset = 5; // seems to result in ±5 degree overshoot
 int bedTempMaxDiff = 15;
-int THERMAL_RUNAWAY_TIMOUT = 6; //seconds
 int initialTemp = -1;
 int fontBBXHeight = 11;
 int lineHeight = fontBBXHeight;
